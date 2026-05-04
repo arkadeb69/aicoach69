@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>AI Career Coach Pro</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+
+<style>
+body {
+  margin:0;
+  font-family: Arial;
+  background:#0b1020;
+  color:white;
+  display:flex;
+  justify-content:center;
+}
+
+.app { width:92%; max-width:850px; margin-top:40px; }
+
+h1 {
+  text-align:center;
+  background:linear-gradient(90deg,#00f2ff,#5b7cfa);
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+}
+
+.card {
+  background:rgba(255,255,255,0.05);
+  padding:20px;
+  border-radius:16px;
+  margin-top:20px;
+}
+
+input, textarea {
+  width:100%;
+  padding:12px;
+  margin-top:10px;
+  border-radius:10px;
+  border:none;
+  background:#111a33;
+  color:white;
+}
+
+button {
+  width:100%;
+  margin-top:15px;
+  padding:12px;
+  border:none;
+  border-radius:25px;
+  background:linear-gradient(90deg,#00f2ff,#5b7cfa);
+  font-weight:bold;
+}
+
+button:disabled { opacity:0.5; }
+
+.loader { display:none; margin-top:10px; text-align:center; }
+
+.progress {
+  height:10px;
+  background:#222;
+  border-radius:10px;
+  overflow:hidden;
+}
+
+.fill {
+  height:100%;
+  background:linear-gradient(90deg,#00f2ff,#5b7cfa);
+}
+
+.tag {
+  display:inline-block;
+  padding:5px 10px;
+  margin:3px;
+  border-radius:20px;
+  font-size:12px;
+}
+
+.green { background:rgba(0,255,150,0.2); }
+.red { background:rgba(255,80,80,0.2); }
+</style>
+</head>
+
+<body>
+
+<div class="app">
+  <h1>AI Career Coach 🚀</h1>
+
+  <div class="card">
+    <input type="file" id="fileInput" accept=".pdf,image/*">
+
+    <div class="loader" id="loader">Processing...</div>
+
+    <textarea id="resume" style="display:none;"></textarea>
+
+    <input id="role" placeholder="Enter role (e.g. video editor)" style="display:none;"/>
+
+    <button id="btn" disabled onclick="analyze()">Analyze Resume</button>
+  </div>
+
+  <div id="output"></div>
+</div>
+
+<script>
+
+const API = "https://scaleup-mrkg.onrender.com";
+
+const fileInput = document.getElementById("fileInput");
+const loader = document.getElementById("loader");
+const resumeBox = document.getElementById("resume");
+const roleBox = document.getElementById("role");
+const btn = document.getElementById("btn");
+
+function clean(text) {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/* FILE HANDLING */
+fileInput.addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  loader.style.display = "block";
+
+  let text = "";
+
+  try {
+    if (file.type === "application/pdf") {
+
+      const reader = new FileReader();
+
+      reader.onload = async function () {
+        const pdf = await pdfjsLib.getDocument({
+          data: new Uint8Array(this.result),
+          disableWorker: true
+        }).promise;
+
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          text += content.items.map(x => x.str).join(" ") + " ";
+        }
+
+        finish(text);
+      };
+
+      reader.readAsArrayBuffer(file);
+
+    } else {
+
+      const res = await Tesseract.recognize(file, "eng");
+      text = res.data.text;
+
+      finish(text);
+    }
+
+  } catch (e) {
+    alert("Extraction failed");
+    loader.style.display = "none";
+  }
+});
+
+function finish(text) {
+  loader.style.display = "none";
+
+  text = clean(text);
+
+  resumeBox.style.display = "block";
+  roleBox.style.display = "block";
+
+  resumeBox.value = text;
+
+  btn.disabled = false;
+}
+
+/* ANALYZE */
+async function analyze() {
+
+  loader.style.display = "block";
+
+  const res = await fetch(`${API}/analyze`, {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({
+      resume: resumeBox.value,
+      role: roleBox.value
+    })
+  });
+
+  const data = await res.json();
+
+  const output = document.getElementById("output");
+  output.innerHTML = "";
+
+  output.insertAdjacentHTML("beforeend", `
+    <div class="card">
+      <h3>Match Score: ${data.score}%</h3>
+
+      <div class="progress">
+        <div class="fill" style="width:${data.score}%"></div>
+      </div>
+
+      <h3>Matched</h3>
+      ${data.matched.map(s=>`<span class="tag green">${s}</span>`).join("")}
+
+      <h3>Missing</h3>
+      ${data.missing.map(s=>`<span class="tag red">${s}</span>`).join("")}
+
+      <h3>Roadmap</h3>
+      ${data.roadmap.map(r=>`Week ${r.week}: ${r.content}`).join("<br>")}
+    </div>
+  `);
+
+  loader.style.display = "none";
+}
+
+</script>
+</body>
+</html>
