@@ -3,86 +3,72 @@ const cors = require("cors");
 
 const app = express();
 
-app.use(cors());
 app.use(express.json({ limit: "10mb" }));
+app.use(cors({ origin: "*" }));
 
-app.get("/", (req,res)=>{
-  res.json({ status:"AI Career Coach running 🚀" });
+app.get("/", (req, res) => {
+  res.json({ status: "AI Career Coach API running 🚀" });
 });
 
-const skillsDB = {
-  "video editor": [
-    "premiere pro",
-    "after effects",
-    "color grading",
-    "storytelling",
-    "sound design"
-  ],
-  "frontend developer": [
-    "html",
-    "css",
-    "javascript",
-    "react",
-    "git"
-  ],
-  "ui ux designer": [
-    "figma",
-    "wireframing",
-    "prototyping",
-    "user research"
-  ]
+const roleSkills = {
+  "frontend developer": ["html","css","javascript","react","git"],
+  "video editor": ["premiere pro","after effects","color grading","storytelling","sound design"],
+  "motion graphics": ["after effects","animation","keyframes","illustrator"],
+  "ui ux designer": ["figma","wireframing","prototyping","user research"],
+  "content creator": ["editing","script writing","social media","branding"]
 };
 
-/* CLEAN TEXT */
-function normalize(text){
+function normalize(text) {
   return text
     .toLowerCase()
-    .replace(/[^a-z0-9 ]/g," ")
-    .replace(/\s+/g," ")
+    .replace(/\s+/g, " ")
+    .replace(/[^a-z0-9+#. ]/g, " ")
     .trim();
 }
 
-/* SMART MATCH */
-function matchSkill(resume, skill){
-  const r = normalize(resume);
-  const s = normalize(skill);
-
-  const words = s.split(" ");
-
-  return words.every(w => r.includes(w));
+function tokenize(text) {
+  return new Set(normalize(text).split(" "));
 }
 
-app.post("/analyze",(req,res)=>{
-
+app.post("/analyze", (req, res) => {
   let { resume, role } = req.body;
 
-  if(!resume || !role){
-    return res.status(400).json({error:"missing data"});
+  if (!resume || !role) {
+    return res.status(400).json({ error: "Missing data" });
   }
 
   resume = normalize(resume);
   role = role.toLowerCase().trim();
 
-  const skills = skillsDB[role] || [];
+  const required = roleSkills[role] || [];
 
-  const matched = skills.filter(s => matchSkill(resume,s));
-  const missing = skills.filter(s => !matchSkill(resume,s));
+  const resumeTokens = tokenize(resume);
 
-  const score = Math.round((matched.length / skills.length) * 100);
+  const matched = [];
+  const missing = [];
 
-  const roadmap = missing.map((s,i)=>({
-    week:i+1,
-    content:`Learn ${s} + build project`
+  required.forEach(skill => {
+    const s = skill.toLowerCase();
+
+    if (resume.includes(s) || [...resumeTokens].some(t => t.includes(s.replace(" ", "")))) {
+      matched.push(skill);
+    } else {
+      missing.push(skill);
+    }
+  });
+
+  const roadmap = missing.map((skill, i) => ({
+    week: i + 1,
+    content: `Learn ${skill} + build 1 project`
   }));
 
   res.json({
     matched,
     missing,
     roadmap,
-    score
+    total: required.length
   });
-
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT,()=>console.log("Running on",PORT));
+app.listen(PORT, () => console.log("Server running on", PORT));
